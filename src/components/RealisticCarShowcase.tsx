@@ -4,9 +4,12 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { RGBELoader } from "three/examples/jsm/loaders/RGBELoader.js";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
+type LightingPreset = "Morning" | "Afternoon" | "Sunset" | "Night";
+
 export default function GroundedCarShowcase() {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const [loadingProgress, setLoadingProgress] = useState(0);
+  const [lighting, setLighting] = useState<LightingPreset>("Afternoon");
 
   useEffect(() => {
     if (!mountRef.current) return;
@@ -14,7 +17,7 @@ export default function GroundedCarShowcase() {
 
     /** ---------- Scene Setup ---------- **/
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0xa0a0a0);
+    scene.background = new THREE.Color(0xbfd1e5);
     scene.fog = new THREE.Fog(0xa0a0a0, 10, 100);
 
     /** ---------- Camera ---------- **/
@@ -36,21 +39,6 @@ export default function GroundedCarShowcase() {
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     mountRef.current.appendChild(renderer.domElement);
 
-    /** ---------- Lights ---------- **/
-    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x8d8d8d, 2.5);
-    hemiLight.position.set(0, 20, 0);
-    scene.add(hemiLight);
-
-    const dirLight = new THREE.DirectionalLight(0xffffff, 2.5);
-    dirLight.position.set(5, 10, 5);
-    dirLight.castShadow = true;
-    dirLight.shadow.camera.top = 10;
-    dirLight.shadow.camera.bottom = -10;
-    dirLight.shadow.camera.left = -10;
-    dirLight.shadow.camera.right = 10;
-    dirLight.shadow.mapSize.set(2048, 2048);
-    scene.add(dirLight);
-
     /** ---------- Ground ---------- **/
     const groundGeo = new THREE.PlaneGeometry(2000, 2000);
     const groundMat = new THREE.MeshStandardMaterial({
@@ -64,13 +52,34 @@ export default function GroundedCarShowcase() {
     ground.receiveShadow = true;
     scene.add(ground);
 
+    /** ---------- Hemisphere Ambient ---------- **/
+    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x8d8d8d, 1.5);
+    hemiLight.position.set(0, 20, 0);
+    scene.add(hemiLight);
+
+    /** ---------- Sunlight (Directional Light) ---------- **/
+    const sunLight = new THREE.DirectionalLight(0xffffff, 2.5);
+    sunLight.castShadow = true;
+    sunLight.shadow.mapSize.set(4096, 4096);
+    sunLight.shadow.camera.top = 20;
+    sunLight.shadow.camera.bottom = -20;
+    sunLight.shadow.camera.left = -20;
+    sunLight.shadow.camera.right = 20;
+    sunLight.shadow.bias = -0.0005;
+    scene.add(sunLight);
+
+    // Optional: Visible sun sphere
+    const sunSphere = new THREE.Mesh();
+    sunSphere.position.copy(sunLight.position);
+    scene.add(sunSphere);
+
     /** ---------- Controls ---------- **/
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.enablePan = false;
     controls.minDistance = 2;
     controls.maxDistance = 20;
-    controls.maxPolarAngle = Math.PI / 2; // Prevent camera from going below ground
+    controls.maxPolarAngle = Math.PI / 2;
     controls.target.set(0, 0.5, 0);
     controls.update();
 
@@ -80,7 +89,7 @@ export default function GroundedCarShowcase() {
       setLoadingProgress(Math.round((loaded / total) * 100));
     manager.onLoad = () => setLoadingProgress(100);
 
-    /** ---------- Environment Setup ---------- **/
+    /** ---------- Environment Map ---------- **/
     const pmremGenerator = new THREE.PMREMGenerator(renderer);
     pmremGenerator.compileEquirectangularShader();
 
@@ -88,7 +97,7 @@ export default function GroundedCarShowcase() {
       const envMap = pmremGenerator.fromEquirectangular(texture).texture;
       scene.environment = envMap;
 
-      // Create background sphere (for realistic horizon)
+      // HDR background sphere
       const bgGeo = new THREE.SphereGeometry(500, 64, 64);
       const bgMat = new THREE.MeshBasicMaterial({
         map: envMap,
@@ -110,14 +119,11 @@ export default function GroundedCarShowcase() {
             const car = gltf.scene;
             car.scale.set(0.005, 0.005, 0.005);
 
-            // Compute bounding box to align car on ground
             const box = new THREE.Box3().setFromObject(car);
             const size = new THREE.Vector3();
             const center = new THREE.Vector3();
             box.getSize(size);
             box.getCenter(center);
-
-            // Center and align with ground
             car.position.sub(center);
             car.position.y += size.y / 2;
 
@@ -128,12 +134,65 @@ export default function GroundedCarShowcase() {
                 if (child.material) child.material.envMapIntensity = 1.5;
               }
             });
-
             scene.add(car);
           },
           undefined,
-          (error) => console.error("❌ Error loading GLTF:", error)
+          (error) => console.error("❌ GLTF Load Error:", error)
         );
+    });
+
+    /** ---------- Lighting Presets (Sun Simulation) ---------- **/
+    const updateLighting = (preset: LightingPreset) => {
+      const sunPos = new THREE.Vector3();
+
+      switch (preset) {
+        case "Morning":
+          sunLight.color.set(0xfff2cc);
+          sunLight.intensity = 2;
+          hemiLight.intensity = 1.2;
+          sunPos.set(-5, 5, 3);
+          scene.background = new THREE.Color(0xe6e9f0);
+          break;
+
+        case "Afternoon":
+          sunLight.color.set(0xffffff);
+          sunLight.intensity = 2.5;
+          hemiLight.intensity = 1.5;
+          sunPos.set(5, 10, 5);
+          scene.background = new THREE.Color(0xbfd1e5);
+          break;
+
+        case "Sunset":
+          sunLight.color.set(0xff9966);
+          sunLight.intensity = 2.2;
+          hemiLight.intensity = 1.0;
+          sunPos.set(-3, 4, -4);
+          scene.background = new THREE.Color(0xffcc99);
+          break;
+
+        case "Night":
+          sunLight.color.set(0x99ccff);
+          sunLight.intensity = 0.5;
+          hemiLight.intensity = 0.3;
+          sunPos.set(0, 2, -5);
+          scene.background = new THREE.Color(0x0a0a1a);
+          break;
+      }
+
+      // Smoothly move sunlight + sun sphere
+      sunLight.position.lerp(sunPos, 0.1);
+      sunLight.target.position.set(0, 0, 0);
+      sunLight.target.updateMatrixWorld();
+      sunSphere.position.copy(sunLight.position);
+    };
+
+    updateLighting(lighting);
+
+    /** ---------- Animation Loop ---------- **/
+    renderer.setAnimationLoop(() => {
+      controls.update();
+      updateLighting(lighting); // reactively adjust sunlight
+      renderer.render(scene, camera);
     });
 
     /** ---------- Resize ---------- **/
@@ -144,24 +203,18 @@ export default function GroundedCarShowcase() {
     };
     window.addEventListener("resize", onResize);
 
-    /** ---------- Animation Loop ---------- **/
-    renderer.setAnimationLoop(() => {
-      controls.update();
-      renderer.render(scene, camera);
-    });
-
     /** ---------- Cleanup ---------- **/
     return () => {
       window.removeEventListener("resize", onResize);
       controls.dispose();
       renderer.dispose();
-      pmremGenerator.dispose();
     };
-  }, []);
+  }, [lighting]);
 
   /** ---------- UI ---------- **/
   return (
     <div className="relative w-full h-screen overflow-hidden">
+      {/* Loader */}
       {loadingProgress < 100 && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-black bg-opacity-80 text-white z-10 transition-all duration-300">
           <div className="text-lg mb-2">Loading... {loadingProgress}%</div>
@@ -173,6 +226,22 @@ export default function GroundedCarShowcase() {
           </div>
         </div>
       )}
+
+      {/* Dropdown */}
+      <div className="absolute top-4 left-4 z-20 bg-white/80 rounded-lg p-2 shadow-md backdrop-blur-sm">
+        <label className="text-sm font-medium mr-2">Lighting:</label>
+        <select
+          value={lighting}
+          onChange={(e) => setLighting(e.target.value as LightingPreset)}
+          className="p-1 rounded border border-gray-300 bg-white text-sm"
+        >
+          <option>Morning</option>
+          <option>Afternoon</option>
+          <option>Sunset</option>
+          <option>Night</option>
+        </select>
+      </div>
+
       <div ref={mountRef} className="absolute inset-0" />
     </div>
   );
