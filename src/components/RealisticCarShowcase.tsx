@@ -4,162 +4,166 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { RGBELoader } from "three/examples/jsm/loaders/RGBELoader.js";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
-export default function App() {
-  const mountRef = useRef(null);
+export default function GroundedCarShowcase() {
+  const mountRef = useRef<HTMLDivElement | null>(null);
   const [loadingProgress, setLoadingProgress] = useState(0);
 
   useEffect(() => {
     if (!mountRef.current) return;
-
-    // ✅ Remove any existing canvas (prevents double render under StrictMode)
     mountRef.current.querySelectorAll("canvas").forEach((c) => c.remove());
 
-    // Scene
+    /** ---------- Scene Setup ---------- **/
     const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0xa0a0a0);
+    scene.fog = new THREE.Fog(0xa0a0a0, 10, 100);
 
-    // Camera
+    /** ---------- Camera ---------- **/
     const camera = new THREE.PerspectiveCamera(
-      60,
+      35,
       window.innerWidth / window.innerHeight,
       0.1,
-      100
+      200
     );
-    camera.position.set(2, 1.5, 4);
+    camera.position.set(-5, 2, 6);
+    scene.add(camera);
 
-    // Renderer
+    /** ---------- Renderer ---------- **/
     const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+    renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.outputColorSpace = THREE.SRGBColorSpace;
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 0.9;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
     mountRef.current.appendChild(renderer.domElement);
 
-    // Controls
+    /** ---------- Lights ---------- **/
+    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x8d8d8d, 2.5);
+    hemiLight.position.set(0, 20, 0);
+    scene.add(hemiLight);
+
+    const dirLight = new THREE.DirectionalLight(0xffffff, 2.5);
+    dirLight.position.set(5, 10, 5);
+    dirLight.castShadow = true;
+    dirLight.shadow.camera.top = 10;
+    dirLight.shadow.camera.bottom = -10;
+    dirLight.shadow.camera.left = -10;
+    dirLight.shadow.camera.right = 10;
+    dirLight.shadow.mapSize.set(2048, 2048);
+    scene.add(dirLight);
+
+    /** ---------- Ground ---------- **/
+    const groundGeo = new THREE.PlaneGeometry(2000, 2000);
+    const groundMat = new THREE.MeshStandardMaterial({
+      color: 0xdddddd,
+      metalness: 0.2,
+      roughness: 0.8,
+    });
+    const ground = new THREE.Mesh(groundGeo, groundMat);
+    ground.rotation.x = -Math.PI / 2;
+    ground.position.y = 0;
+    ground.receiveShadow = true;
+    scene.add(ground);
+
+    /** ---------- Controls ---------- **/
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
-    controls.maxDistance = 10;
-    controls.minDistance = 1;
+    controls.enablePan = false;
+    controls.minDistance = 2;
+    controls.maxDistance = 20;
+    controls.maxPolarAngle = Math.PI / 2; // Prevent camera from going below ground
+    controls.target.set(0, 0.5, 0);
+    controls.update();
 
-    // Loading manager
+    /** ---------- Loading Manager ---------- **/
     const manager = new THREE.LoadingManager();
-    manager.onProgress = (_, loaded, total) => {
+    manager.onProgress = (_, loaded, total) =>
       setLoadingProgress(Math.round((loaded / total) * 100));
-    };
-    manager.onLoad = () => {
-      setLoadingProgress(100);
-    };
+    manager.onLoad = () => setLoadingProgress(100);
 
-    // ✅ Load HDR only once
-    new RGBELoader(manager)
-      .setPath("/hdr/")
-      .load("background.hdr", (texture) => {
-        texture.mapping = THREE.EquirectangularReflectionMapping;
-        scene.environment = texture;
-        scene.background = texture;
+    /** ---------- Environment Setup ---------- **/
+    const pmremGenerator = new THREE.PMREMGenerator(renderer);
+    pmremGenerator.compileEquirectangularShader();
 
-        // ✅ Load car model
-        new GLTFLoader(manager)
-          .setPath("/iron_howl/")
-          .load(
-            "scene.gltf",
-            (gltf) => {
-              const car = gltf.scene;
-              car.scale.set(0.5, 0.5, 0.5);
+    new RGBELoader(manager).load("/hdr/background.hdr", (texture) => {
+      const envMap = pmremGenerator.fromEquirectangular(texture).texture;
+      scene.environment = envMap;
 
-              car.traverse((child: any) => {
-                if (child.isMesh) {
-                  child.castShadow = true;
-                  child.receiveShadow = true;
-                  child.material.envMapIntensity = 1.2;
-                }
-              });
-
-              // ✅ Center and ground the car
-              const box = new THREE.Box3().setFromObject(car);
-              const center = box.getCenter(new THREE.Vector3());
-              const minY = box.min.y;
-              car.position.sub(center);
-              car.position.y -= minY;
-
-              scene.add(car);
-
-              // ✅ Add a soft shadow plane
-              const groundGeometry = new THREE.PlaneGeometry(100, 100);
-              const groundMaterial = new THREE.ShadowMaterial({ opacity: 0.35 });
-              const ground = new THREE.Mesh(groundGeometry, groundMaterial);
-              ground.rotation.x = -Math.PI / 2;
-              ground.position.y = -0.01;
-              ground.receiveShadow = true;
-              scene.add(ground);
-
-              // ✅ Add realistic sunlight
-              const sun = new THREE.DirectionalLight(0xffffff, 1.2);
-              sun.position.set(5, 10, 7);
-              sun.castShadow = true;
-              sun.shadow.mapSize.set(2048, 2048);
-              sun.shadow.bias = -0.001;
-              scene.add(sun);
-            },
-            undefined,
-            (err) => console.error("❌ GLTF load error:", err)
-          );
+      // Create background sphere (for realistic horizon)
+      const bgGeo = new THREE.SphereGeometry(500, 64, 64);
+      const bgMat = new THREE.MeshBasicMaterial({
+        map: envMap,
+        side: THREE.BackSide,
       });
+      const bgMesh = new THREE.Mesh(bgGeo, bgMat);
+      bgMesh.rotation.x = 0.15;
+      scene.add(bgMesh);
 
-    // Handle window resize
-    const resize = () => {
+      texture.dispose();
+      pmremGenerator.dispose();
+
+      /** ---------- Load Car ---------- **/
+      new GLTFLoader(manager)
+        .setPath("/mclaren/")
+        .load(
+          "scene.gltf",
+          (gltf) => {
+            const car = gltf.scene;
+            car.scale.set(0.005, 0.005, 0.005);
+
+            // Compute bounding box to align car on ground
+            const box = new THREE.Box3().setFromObject(car);
+            const size = new THREE.Vector3();
+            const center = new THREE.Vector3();
+            box.getSize(size);
+            box.getCenter(center);
+
+            // Center and align with ground
+            car.position.sub(center);
+            car.position.y += size.y / 2;
+
+            car.traverse((child) => {
+              if (child.isMesh) {
+                child.castShadow = true;
+                child.receiveShadow = true;
+                if (child.material) child.material.envMapIntensity = 1.5;
+              }
+            });
+
+            scene.add(car);
+          },
+          undefined,
+          (error) => console.error("❌ Error loading GLTF:", error)
+        );
+    });
+
+    /** ---------- Resize ---------- **/
+    const onResize = () => {
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(window.innerWidth, window.innerHeight);
     };
-    window.addEventListener("resize", resize);
+    window.addEventListener("resize", onResize);
 
-    // Pause rendering when tab not visible
-    let isVisible = true;
-    const handleVisibilityChange = () => {
-      isVisible = !document.hidden;
-    };
-    document.addEventListener("visibilitychange", handleVisibilityChange);
+    /** ---------- Animation Loop ---------- **/
+    renderer.setAnimationLoop(() => {
+      controls.update();
+      renderer.render(scene, camera);
+    });
 
-    // Animation loop
-    const animate = () => {
-      if (isVisible) {
-        controls.update();
-        renderer.render(scene, camera);
-      }
-      requestAnimationFrame(animate);
-    };
-    animate();
-
-    // Cleanup on unmount
+    /** ---------- Cleanup ---------- **/
     return () => {
-      window.removeEventListener("resize", resize);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-
-      if (mountRef.current?.contains(renderer.domElement)) {
-        mountRef.current.removeChild(renderer.domElement);
-      }
-
-      renderer.dispose();
+      window.removeEventListener("resize", onResize);
       controls.dispose();
-      scene.traverse((obj: any) => {
-        if (obj.isMesh) {
-          obj.geometry?.dispose();
-          if (obj.material.isMaterial) {
-            obj.material.dispose();
-          }
-        }
-      });
+      renderer.dispose();
+      pmremGenerator.dispose();
     };
   }, []);
 
+  /** ---------- UI ---------- **/
   return (
     <div className="relative w-full h-screen overflow-hidden">
       {loadingProgress < 100 && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black bg-opacity-80 text-white z-10">
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black bg-opacity-80 text-white z-10 transition-all duration-300">
           <div className="text-lg mb-2">Loading... {loadingProgress}%</div>
           <div className="w-48 h-2 bg-gray-700 rounded-full overflow-hidden">
             <div
