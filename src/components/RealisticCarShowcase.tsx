@@ -1,248 +1,245 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef } from "react";
 import * as THREE from "three";
-import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
-import { RGBELoader } from "three/examples/jsm/loaders/RGBELoader.js";
+import Stats from "three/examples/jsm/libs/stats.module.js";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { HDRLoader } from "three/examples/jsm/loaders/HDRLoader.js";
 
-type LightingPreset = "Morning" | "Afternoon" | "Sunset" | "Night";
 
-export default function GroundedCarShowcase() {
-  const mountRef = useRef<HTMLDivElement | null>(null);
-  const [loadingProgress, setLoadingProgress] = useState(0);
-  const [lighting, setLighting] = useState<LightingPreset>("Afternoon");
+export default function McLarenViewer() {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const bodyColorRef = useRef<HTMLInputElement | null>(null);
+  const detailsColorRef = useRef<HTMLInputElement | null>(null);
+  const glassColorRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
-    if (!mountRef.current) return;
-    mountRef.current.querySelectorAll("canvas").forEach((c) => c.remove());
+    if (!containerRef.current) return;
 
-    /** ---------- Scene Setup ---------- **/
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0xbfd1e5);
-    scene.fog = new THREE.Fog(0xa0a0a0, 10, 100);
+    let camera: THREE.PerspectiveCamera;
+    let renderer: THREE.WebGLRenderer;
+    let scene: THREE.Scene;
+    let controls: OrbitControls;
+    let stats: Stats;
+    let grid: THREE.GridHelper;
 
-    /** ---------- Camera ---------- **/
-    const camera = new THREE.PerspectiveCamera(
-      35,
-      window.innerWidth / window.innerHeight,
-      0.1,
-      200
-    );
-    camera.position.set(-5, 2, 6);
-    scene.add(camera);
+    const wheels: THREE.Object3D[] = [];
 
-    /** ---------- Renderer ---------- **/
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setPixelRatio(window.devicePixelRatio);
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    renderer.outputColorSpace = THREE.SRGBColorSpace;
-    mountRef.current.appendChild(renderer.domElement);
+    function init() {
+      const container = containerRef.current!;
 
-    /** ---------- Ground ---------- **/
-    const groundGeo = new THREE.PlaneGeometry(2000, 2000);
-    const groundMat = new THREE.MeshStandardMaterial({
-      color: 0xdddddd,
-      metalness: 0.2,
-      roughness: 0.8,
-    });
-    const ground = new THREE.Mesh(groundGeo, groundMat);
-    ground.rotation.x = -Math.PI / 2;
-    ground.position.y = 0;
-    ground.receiveShadow = true;
-    scene.add(ground);
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setPixelRatio(window.devicePixelRatio);
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setAnimationLoop(animate);
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 0.85;
+      container.appendChild(renderer.domElement);
 
-    /** ---------- Hemisphere Ambient ---------- **/
-    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x8d8d8d, 1.5);
-    hemiLight.position.set(0, 20, 0);
-    scene.add(hemiLight);
+      stats = new Stats();
+      stats.dom.style.position = "absolute";
+      stats.dom.style.top = "0px";
+      // container.appendChild(stats.dom);
 
-    /** ---------- Sunlight (Directional Light) ---------- **/
-    const sunLight = new THREE.DirectionalLight(0xffffff, 2.5);
-    sunLight.castShadow = true;
-    sunLight.shadow.mapSize.set(4096, 4096);
-    sunLight.shadow.camera.top = 20;
-    sunLight.shadow.camera.bottom = -20;
-    sunLight.shadow.camera.left = -20;
-    sunLight.shadow.camera.right = 20;
-    sunLight.shadow.bias = -0.0005;
-    scene.add(sunLight);
+      camera = new THREE.PerspectiveCamera(
+        40,
+        window.innerWidth / window.innerHeight,
+        0.1,
+        100
+      );
+      camera.position.set(4.25, 1.4, -4.5);
 
-    // Optional: Visible sun sphere
-    const sunSphere = new THREE.Mesh();
-    sunSphere.position.copy(sunLight.position);
-    scene.add(sunSphere);
-
-    /** ---------- Controls ---------- **/
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.enablePan = false;
-    controls.minDistance = 2;
-    controls.maxDistance = 20;
-    controls.maxPolarAngle = Math.PI / 2;
-    controls.target.set(0, 0.5, 0);
-    controls.update();
-
-    /** ---------- Loading Manager ---------- **/
-    const manager = new THREE.LoadingManager();
-    manager.onProgress = (_, loaded, total) =>
-      setLoadingProgress(Math.round((loaded / total) * 100));
-    manager.onLoad = () => setLoadingProgress(100);
-
-    /** ---------- Environment Map ---------- **/
-    const pmremGenerator = new THREE.PMREMGenerator(renderer);
-    pmremGenerator.compileEquirectangularShader();
-
-    new RGBELoader(manager).load("/hdr/background.hdr", (texture) => {
-      const envMap = pmremGenerator.fromEquirectangular(texture).texture;
-      scene.environment = envMap;
-
-      // HDR background sphere
-      const bgGeo = new THREE.SphereGeometry(500, 64, 64);
-      const bgMat = new THREE.MeshBasicMaterial({
-        map: envMap,
-        side: THREE.BackSide,
-      });
-      const bgMesh = new THREE.Mesh(bgGeo, bgMat);
-      bgMesh.rotation.x = 0.15;
-      scene.add(bgMesh);
-
-      texture.dispose();
-      pmremGenerator.dispose();
-
-      /** ---------- Load Car ---------- **/
-      new GLTFLoader(manager)
-        .setPath("/mclaren/")
-        .load(
-          "scene.gltf",
-          (gltf) => {
-            const car = gltf.scene;
-            car.scale.set(0.005, 0.005, 0.005);
-
-            const box = new THREE.Box3().setFromObject(car);
-            const size = new THREE.Vector3();
-            const center = new THREE.Vector3();
-            box.getSize(size);
-            box.getCenter(center);
-            car.position.sub(center);
-            car.position.y += size.y / 2;
-
-            car.traverse((child) => {
-              if (child.isMesh) {
-                child.castShadow = true;
-                child.receiveShadow = true;
-                if (child.material) child.material.envMapIntensity = 1.5;
-              }
-            });
-            scene.add(car);
-          },
-          undefined,
-          (error) => console.error("❌ GLTF Load Error:", error)
-        );
-    });
-
-    /** ---------- Lighting Presets (Sun Simulation) ---------- **/
-    const updateLighting = (preset: LightingPreset) => {
-      const sunPos = new THREE.Vector3();
-
-      switch (preset) {
-        case "Morning":
-          sunLight.color.set(0xfff2cc);
-          sunLight.intensity = 2;
-          hemiLight.intensity = 1.2;
-          sunPos.set(-5, 5, 3);
-          scene.background = new THREE.Color(0xe6e9f0);
-          break;
-
-        case "Afternoon":
-          sunLight.color.set(0xffffff);
-          sunLight.intensity = 2.5;
-          hemiLight.intensity = 1.5;
-          sunPos.set(5, 10, 5);
-          scene.background = new THREE.Color(0xbfd1e5);
-          break;
-
-        case "Sunset":
-          sunLight.color.set(0xff9966);
-          sunLight.intensity = 2.2;
-          hemiLight.intensity = 1.0;
-          sunPos.set(-3, 4, -4);
-          scene.background = new THREE.Color(0xffcc99);
-          break;
-
-        case "Night":
-          sunLight.color.set(0x99ccff);
-          sunLight.intensity = 0.5;
-          hemiLight.intensity = 0.3;
-          sunPos.set(0, 2, -5);
-          scene.background = new THREE.Color(0x0a0a1a);
-          break;
-      }
-
-      // Smoothly move sunlight + sun sphere
-      sunLight.position.lerp(sunPos, 0.1);
-      sunLight.target.position.set(0, 0, 0);
-      sunLight.target.updateMatrixWorld();
-      sunSphere.position.copy(sunLight.position);
-    };
-
-    updateLighting(lighting);
-
-    /** ---------- Animation Loop ---------- **/
-    renderer.setAnimationLoop(() => {
+      controls = new OrbitControls(camera, renderer.domElement);
+      controls.maxDistance = 9;
+      controls.maxPolarAngle = THREE.MathUtils.degToRad(90);
+      controls.target.set(0, 0.5, 0);
       controls.update();
-      updateLighting(lighting); // reactively adjust sunlight
-      renderer.render(scene, camera);
-    });
 
-    /** ---------- Resize ---------- **/
-    const onResize = () => {
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x333333);
+
+      const hdrLoader = new HDRLoader();
+
+      hdrLoader.load("/hdr/background.hdr", (hdr) => {
+        hdr.mapping = THREE.EquirectangularReflectionMapping;
+        scene.environment = hdr;
+      });
+
+      scene.fog = new THREE.Fog(0x333333, 10, 15);
+
+      grid = new THREE.GridHelper(20, 40, 0xffffff, 0xffffff);
+      grid.material.opacity = 0.2;
+      grid.material.depthWrite = false;
+      grid.material.transparent = true;
+      scene.add(grid);
+
+      // Materials
+      const bodyMaterial = new THREE.MeshPhysicalMaterial({
+        color: 0xff6600,
+        metalness: 0.8,
+        roughness: 0.2,
+        clearcoat: 1,
+        clearcoatRoughness: 0.05,
+      });
+
+      const detailsMaterial = new THREE.MeshStandardMaterial({
+        color: 0xffffff,
+        metalness: 1.0,
+        roughness: 0.5,
+      });
+
+      const glassMaterial = new THREE.MeshPhysicalMaterial({
+        color: 0xffffff,
+        metalness: 0.25,
+        roughness: 0,
+        transmission: 1.0,
+      });
+
+      // UI color pickers
+      bodyColorRef.current!.oninput = (e) =>
+        bodyMaterial.color.set((e.target as HTMLInputElement).value);
+
+      detailsColorRef.current!.oninput = (e) =>
+        detailsMaterial.color.set((e.target as HTMLInputElement).value);
+
+      glassColorRef.current!.oninput = (e) =>
+        glassMaterial.color.set((e.target as HTMLInputElement).value);
+
+      // GLTF Loader
+      const loader = new GLTFLoader();
+
+      loader.load(
+        "/iron_howl/scene.gltf",
+        (gltf) => {
+          const car = gltf.scene;
+          car.scale.set(1, 1, 1);
+
+          const box = new THREE.Box3().setFromObject(car);
+          const size = new THREE.Vector3();
+          const center = new THREE.Vector3();
+          box.getSize(size);
+          box.getCenter(center);
+          car.position.sub(center);
+          car.position.y += size.y / 2;
+
+          car.traverse((child: THREE.Object3D) => {
+            if (child instanceof THREE.Mesh) {
+              child.castShadow = true;
+              child.receiveShadow = true;
+              child.material.envMapIntensity = 1.5;
+
+              const name = child.name.toLowerCase();
+
+              // Body paint
+              if (name.includes("body") || name.includes("carpaint")) {
+                child.material = bodyMaterial;
+              }
+
+              // Details: rims, trims, metal parts
+              else if (
+                name.includes("rim") ||
+                name.includes("wheel") ||
+                name.includes("detail") ||
+                name.includes("metal")
+              ) {
+                child.material = detailsMaterial;
+              }
+
+              // Windows / glass
+              else if (
+                name.includes("glass") ||
+                name.includes("window") ||
+                name.includes("windshield")
+              ) {
+                child.material = glassMaterial;
+              }
+            }
+          });
+
+          scene.add(car);
+        },
+
+        // onProgress (optional)
+        undefined,
+
+        // onError — MUST BE a function!
+        (err) => {
+          console.error("❌ GLTF load failed:", err);
+        }
+      );
+
+
+      window.addEventListener("resize", onWindowResize);
+    }
+
+    function onWindowResize() {
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(window.innerWidth, window.innerHeight);
-    };
-    window.addEventListener("resize", onResize);
+    }
 
-    /** ---------- Cleanup ---------- **/
-    return () => {
-      window.removeEventListener("resize", onResize);
-      controls.dispose();
-      renderer.dispose();
-    };
-  }, [lighting]);
+    function animate() {
+      controls.update();
 
-  /** ---------- UI ---------- **/
+      const time = -performance.now() / 1000;
+
+      wheels.forEach((wh) => {
+        wh.rotation.x = time * Math.PI * 2;
+      });
+
+      grid.position.z = -(time % 1);
+
+      renderer.render(scene, camera);
+      stats.update();
+    }
+
+    init();
+    return () => window.removeEventListener("resize", onWindowResize);
+  }, []);
+
   return (
-    <div className="relative w-full h-screen overflow-hidden">
-      {/* Loader */}
-      {loadingProgress < 100 && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black bg-opacity-80 text-white z-10 transition-all duration-300">
-          <div className="text-lg mb-2">Loading... {loadingProgress}%</div>
-          <div className="w-48 h-2 bg-gray-700 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-green-400 transition-all duration-300"
-              style={{ width: `${loadingProgress}%` }}
-            ></div>
-          </div>
-        </div>
-      )}
+    <div className="min-h-screen max-w-screen-xl text-gray-50">
 
-      {/* Dropdown */}
-      <div className="absolute top-4 left-4 z-20 bg-white/80 rounded-lg p-2 shadow-md backdrop-blur-sm">
-        <label className="text-sm font-medium mr-2">Lighting:</label>
-        <select
-          value={lighting}
-          onChange={(e) => setLighting(e.target.value as LightingPreset)}
-          className="p-1 rounded border border-gray-300 bg-white text-sm"
-        >
-          <option>Morning</option>
-          <option>Afternoon</option>
-          <option>Sunset</option>
-          <option>Night</option>
-        </select>
+      {/* Color Controls */}
+      <div className="absolute top-6 left-1/2 -translate-x-1/2 z-10 
+                  flex items-center gap-8 p-3
+                  bg-transparent text-sm font-medium">
+        <label className="flex items-center gap-2">
+          <input
+            ref={bodyColorRef}
+            type="color"
+            defaultValue="#ff6600"
+            className="w-6 h-6 rounded-md border border-gray-600 cursor-pointer"
+          />
+          Body
+        </label>
+
+        <label className="flex items-center gap-2">
+          <input
+            ref={detailsColorRef}
+            type="color"
+            defaultValue="#ffffff"
+            className="w-6 h-6 rounded-md border border-gray-600 cursor-pointer"
+          />
+          Details
+        </label>
+
+        <label className="flex items-center gap-2">
+          <input
+            ref={glassColorRef}
+            type="color"
+            defaultValue="#ffffff"
+            className="w-6 h-6 rounded-md border border-gray-600 cursor-pointer"
+          />
+          Glass
+        </label>
       </div>
 
-      <div ref={mountRef} className="absolute inset-0" />
+      {/* 3D Viewer */}
+      <div
+        ref={containerRef}
+        className="w-full relative"
+      />
     </div>
+
   );
 }
