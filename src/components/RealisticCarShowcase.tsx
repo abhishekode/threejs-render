@@ -55,7 +55,7 @@ export default function McLarenViewer() {
       controls.update();
 
       scene = new THREE.Scene();
-      scene.background = new THREE.Color(0x333333);
+      scene.background = new THREE.Color(0x2a2a2a);
 
       const hdrLoader = new HDRLoader();
 
@@ -64,7 +64,7 @@ export default function McLarenViewer() {
         scene.environment = hdr;
       });
 
-      scene.fog = new THREE.Fog(0x333333, 10, 15);
+      scene.fog = new THREE.Fog(0xffffff, 10, 15);
 
       grid = new THREE.GridHelper(20, 40, 0xffffff, 0xffffff);
       grid.material.opacity = 0.2;
@@ -108,10 +108,10 @@ export default function McLarenViewer() {
       const loader = new GLTFLoader();
 
       loader.load(
-        "/iron_howl/scene.gltf",
+        "/lexus/scene.gltf",
         (gltf) => {
           const car = gltf.scene;
-          car.scale.set(1, 1, 1);
+          car.scale.set(0.01, 0.01, 0.01);
 
           const box = new THREE.Box3().setFromObject(car);
           const size = new THREE.Vector3();
@@ -127,10 +127,18 @@ export default function McLarenViewer() {
               child.receiveShadow = true;
               child.material.envMapIntensity = 1.5;
 
-              const name = child.name.toLowerCase();
+              const name = child.material.name.toLowerCase();
+              const materialName = child.material.name.toLowerCase();
+
+              console.log('material name:', materialName);
+
+              console.log('name', name)
 
               // Body paint
-              if (name.includes("body") || name.includes("carpaint")) {
+              if (
+                name.includes("body") ||
+                name.includes("carpaint") ||
+                materialName.includes("material3")) {
                 child.material = bodyMaterial;
               }
 
@@ -139,7 +147,13 @@ export default function McLarenViewer() {
                 name.includes("rim") ||
                 name.includes("wheel") ||
                 name.includes("detail") ||
-                name.includes("metal")
+                name.includes("metal") ||
+                name.includes("trim") ||
+                name.includes("brake") ||
+                name.includes("tire") ||
+                name.includes("exhaust") ||
+                name.includes("antenna")
+
               ) {
                 child.material = detailsMaterial;
               }
@@ -186,7 +200,7 @@ export default function McLarenViewer() {
         wh.rotation.x = time * Math.PI * 2;
       });
 
-      grid.position.z = -(time % 1);
+      // grid.position.z = -(time % 1);
 
       renderer.render(scene, camera);
       stats.update();
@@ -197,48 +211,53 @@ export default function McLarenViewer() {
   }, []);
 
   return (
-    <div className="min-h-screen max-w-screen-xl text-gray-50">
-
-      {/* Color Controls */}
+    <div className="w-full h-screen bg-gray-900 relative">
+      {/* Controls Panel */}
       <div className="absolute top-6 left-1/2 -translate-x-1/2 z-10 
-                  flex items-center gap-8 p-3
-                  bg-transparent text-sm font-medium">
-        <label className="flex items-center gap-2">
+                      flex flex-wrap items-center justify-center gap-4 p-4
+                      bg-gray-800/80 backdrop-blur-sm rounded-lg shadow-lg
+                      border border-gray-700">
+
+        <label className="flex items-center gap-2 text-gray-100 text-sm font-medium">
+          <span className="text-gray-300">Body:</span>
           <input
+            type="color"
             ref={bodyColorRef}
-            type="color"
             defaultValue="#ff6600"
-            className="w-6 h-6 rounded-md border border-gray-600 cursor-pointer"
+            className="w-10 h-10 rounded border border-gray-600 cursor-pointer bg-transparent"
           />
-          Body
         </label>
 
-        <label className="flex items-center gap-2">
+        <label className="flex items-center gap-2 text-gray-100 text-sm font-medium">
+          <span className="text-gray-300">Details:</span>
           <input
+            type="color"
+            defaultValue="#ffffff"
             ref={detailsColorRef}
-            type="color"
-            defaultValue="#ffffff"
-            className="w-6 h-6 rounded-md border border-gray-600 cursor-pointer"
+            className="w-10 h-10 rounded border border-gray-600 cursor-pointer bg-transparent"
           />
-          Details
         </label>
 
-        <label className="flex items-center gap-2">
+        <label className="flex items-center gap-2 text-gray-100 text-sm font-medium">
+          <span className="text-gray-300">Glass:</span>
           <input
-            ref={glassColorRef}
             type="color"
             defaultValue="#ffffff"
-            className="w-6 h-6 rounded-md border border-gray-600 cursor-pointer"
+            ref={glassColorRef}
+            className="w-10 h-10 rounded border border-gray-600 cursor-pointer bg-transparent"
           />
-          Glass
         </label>
       </div>
 
-      {/* 3D Viewer */}
-      <div
-        ref={containerRef}
-        className="w-full relative"
-      />
+      {/* Instructions */}
+      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-10
+                      px-4 py-2 bg-gray-800/80 backdrop-blur-sm rounded-lg
+                      border border-gray-700 text-gray-300 text-sm">
+        <p>🖱️ Left click + drag to rotate • Right click + drag to pan • Scroll to zoom</p>
+      </div>
+
+      {/* 3D Viewer Container */}
+      <div ref={containerRef} className="w-full h-full" />
     </div>
 
   );
