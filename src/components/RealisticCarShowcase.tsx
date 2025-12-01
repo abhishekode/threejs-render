@@ -95,7 +95,7 @@ export default function McLarenViewer() {
       renderer = new THREE.WebGLRenderer({ antialias: true });
       renderer.setSize(window.innerWidth, window.innerHeight);
       renderer.setPixelRatio(window.devicePixelRatio);
-      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMapping = THREE.NoToneMapping;
       renderer.toneMappingExposure = 0.95;
       container.appendChild(renderer.domElement);
 
@@ -117,20 +117,37 @@ export default function McLarenViewer() {
       stats.dom.style.top = "0px";
 
       scene = new THREE.Scene();
-      scene.background = new THREE.Color(0xffffff);
+      scene.background = new THREE.Color("#dcdcdc");
+      scene.environment = null;
 
-      /** ENVIRONMENT */
-      new HDRLoader().load("/hdr/background.hdr", (hdr) => {
-        hdr.mapping = THREE.EquirectangularReflectionMapping;
-        scene.environment = null;
-      });
+      // /** ENVIRONMENT */
+      // new HDRLoader().load("/hdr/background.hdr", (hdr) => {
+      //   hdr.mapping = THREE.EquirectangularReflectionMapping;
+      //   scene.environment = null;
+      // });
+
+
 
       /** GRID (KEEPING IT) */
       grid = new THREE.GridHelper(20, 40, 0x0a0a2e, 0x0a0a2e);
       grid.material.opacity = 0.2;
       grid.material.transparent = true;
       grid.material.depthWrite = false;
-      scene.add(grid);
+      // scene.add(grid);
+
+
+      const floorGeometry = new THREE.PlaneGeometry(40, 40);
+      const floorMaterial = new THREE.MeshStandardMaterial({
+        color: 0xD0D0D0, // smooth light grey
+        roughness: 0.9,
+        metalness: 0,
+      });
+
+      const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+      floor.rotation.x = -Math.PI / 2; // make it horizontal
+      floor.position.y = 0; // ground level
+      floor.receiveShadow = true;
+      scene.add(floor);
 
       /** LIGHTS */
       sunlight = new THREE.DirectionalLight(0xffffff, 2);
@@ -175,6 +192,8 @@ export default function McLarenViewer() {
 
           car.traverse((child) => {
             if (child instanceof THREE.Mesh) {
+              child.castShadow = true;
+              child.receiveShadow = false;
               const mname = child.material.name.toLowerCase();
 
               if (mname.includes("body") || mname.includes("paint")) {
@@ -234,19 +253,19 @@ export default function McLarenViewer() {
         <label className="text-gray-100 flex gap-1 items-center">
           Body:
           <input type="color" ref={bodyColorRef} defaultValue="#ff6600"
-                 className="w-10 h-10" />
+            className="w-10 h-10" />
         </label>
 
         <label className="text-gray-100 flex gap-1 items-center">
           Details:
           <input type="color" ref={detailsColorRef} defaultValue="#ffffff"
-                 className="w-10 h-10" />
+            className="w-10 h-10" />
         </label>
 
         <label className="text-gray-100 flex gap-1 items-center">
           Glass:
           <input type="color" ref={glassColorRef} defaultValue="#ffffff"
-                 className="w-10 h-10" />
+            className="w-10 h-10" />
         </label>
 
         <label className="text-gray-100 flex gap-1 items-center">
