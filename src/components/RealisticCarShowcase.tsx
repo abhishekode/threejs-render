@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import Stats from "three/examples/jsm/libs/stats.module.js";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
@@ -11,6 +11,9 @@ export default function McLarenViewer() {
   const bodyColorRef = useRef<HTMLInputElement | null>(null);
   const detailsColorRef = useRef<HTMLInputElement | null>(null);
   const glassColorRef = useRef<HTMLInputElement | null>(null);
+  const lightingRef = useRef<HTMLSelectElement | null>(null);
+
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -21,24 +24,80 @@ export default function McLarenViewer() {
     let controls: OrbitControls;
     let stats: Stats;
     let grid: THREE.GridHelper;
+    let sunlight: THREE.DirectionalLight;
+    let ambient: THREE.AmbientLight;
 
-    const wheels: THREE.Object3D[] = [];
+    /** CAR MATERIALS (shared) */
+    const bodyMaterial = new THREE.MeshPhysicalMaterial({
+      color: 0xff6600,
+      metalness: 0.9,
+      roughness: 0.25,
+      clearcoat: 1,
+      clearcoatRoughness: 0.05,
+    });
 
+    const detailsMaterial = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      metalness: 1.0,
+      roughness: 0.4,
+    });
+
+    const glassMaterial = new THREE.MeshPhysicalMaterial({
+      color: 0xffffff,
+      metalness: 0.1,
+      roughness: 0.0,
+      transmission: 1.0,
+      thickness: 0.6,
+    });
+
+    /** OPTIMIZED LIGHTING ENGINE */
+    const applyLighting = (mode: string) => {
+      const configs = {
+        morning: {
+          sunColor: 0xffd7a8,
+          sunIntensity: 1.3,
+          position: new THREE.Vector3(3, 2, 1),
+          ambient: 0.35,
+        },
+        noon: {
+          sunColor: 0xffffff,
+          sunIntensity: 2.1,
+          position: new THREE.Vector3(0, 5, 0),
+          ambient: 0.6,
+        },
+        evening: {
+          sunColor: 0xff8c4a,
+          sunIntensity: 1.0,
+          position: new THREE.Vector3(-2, 1.2, 2),
+          ambient: 0.3,
+        },
+        night: {
+          sunColor: 0x8ab4ff,
+          sunIntensity: 0.3,
+          position: new THREE.Vector3(1, 1, 3),
+          ambient: 0.18,
+        },
+      };
+
+      const cfg = configs[mode];
+
+      sunlight.color.set(cfg.sunColor);
+      sunlight.intensity = cfg.sunIntensity;
+      sunlight.position.copy(cfg.position);
+
+      ambient.intensity = cfg.ambient;
+    };
+
+    /** INIT */
     function init() {
       const container = containerRef.current!;
 
       renderer = new THREE.WebGLRenderer({ antialias: true });
-      renderer.setPixelRatio(window.devicePixelRatio);
       renderer.setSize(window.innerWidth, window.innerHeight);
-      renderer.setAnimationLoop(animate);
+      renderer.setPixelRatio(window.devicePixelRatio);
       renderer.toneMapping = THREE.ACESFilmicToneMapping;
-      renderer.toneMappingExposure = 0.85;
+      renderer.toneMappingExposure = 0.95;
       container.appendChild(renderer.domElement);
-
-      stats = new Stats();
-      stats.dom.style.position = "absolute";
-      stats.dom.style.top = "0px";
-      // container.appendChild(stats.dom);
 
       camera = new THREE.PerspectiveCamera(
         40,
@@ -46,7 +105,7 @@ export default function McLarenViewer() {
         0.1,
         100
       );
-      camera.position.set(4.25, 1.4, -4.5);
+      camera.position.set(4.2, 1.4, -4.3);
 
       controls = new OrbitControls(camera, renderer.domElement);
       controls.maxDistance = 9;
@@ -54,47 +113,37 @@ export default function McLarenViewer() {
       controls.target.set(0, 0.5, 0);
       controls.update();
 
+      stats = new Stats();
+      stats.dom.style.top = "0px";
+
       scene = new THREE.Scene();
-      scene.background = new THREE.Color(0x2a2a2a);
+      scene.background = new THREE.Color(0x242424);
 
-      const hdrLoader = new HDRLoader();
-
-      hdrLoader.load("/hdr/background.hdr", (hdr) => {
+      /** ENVIRONMENT */
+      new HDRLoader().load("/hdr/background.hdr", (hdr) => {
         hdr.mapping = THREE.EquirectangularReflectionMapping;
         scene.environment = hdr;
       });
 
-      scene.fog = new THREE.Fog(0xffffff, 10, 15);
-
+      /** GRID (KEEPING IT) */
       grid = new THREE.GridHelper(20, 40, 0xffffff, 0xffffff);
       grid.material.opacity = 0.2;
-      grid.material.depthWrite = false;
       grid.material.transparent = true;
+      grid.material.depthWrite = false;
       scene.add(grid);
 
-      // Materials
-      const bodyMaterial = new THREE.MeshPhysicalMaterial({
-        color: 0xff6600,
-        metalness: 0.8,
-        roughness: 0.2,
-        clearcoat: 1,
-        clearcoatRoughness: 0.05,
-      });
+      /** LIGHTS */
+      sunlight = new THREE.DirectionalLight(0xffffff, 2);
+      sunlight.position.set(3, 4, 2);
+      sunlight.castShadow = true;
+      scene.add(sunlight);
 
-      const detailsMaterial = new THREE.MeshStandardMaterial({
-        color: 0xffffff,
-        metalness: 1.0,
-        roughness: 0.5,
-      });
+      ambient = new THREE.AmbientLight(0xffffff, 0.4);
+      scene.add(ambient);
 
-      const glassMaterial = new THREE.MeshPhysicalMaterial({
-        color: 0xffffff,
-        metalness: 0.25,
-        roughness: 0,
-        transmission: 1.0,
-      });
+      applyLighting("noon"); // default scene lighting
 
-      // UI color pickers
+      /** COLOR PICKERS */
       bodyColorRef.current!.oninput = (e) =>
         bodyMaterial.color.set((e.target as HTMLInputElement).value);
 
@@ -104,88 +153,56 @@ export default function McLarenViewer() {
       glassColorRef.current!.oninput = (e) =>
         glassMaterial.color.set((e.target as HTMLInputElement).value);
 
-      // GLTF Loader
-      const loader = new GLTFLoader();
+      /** LIGHTING SELECT */
+      lightingRef.current!.onchange = (e) =>
+        applyLighting((e.target as HTMLSelectElement).value);
 
-      loader.load(
+      /** LOAD CAR */
+      new GLTFLoader().load(
         "/lexus/scene.gltf",
         (gltf) => {
           const car = gltf.scene;
           car.scale.set(0.01, 0.01, 0.01);
 
           const box = new THREE.Box3().setFromObject(car);
-          const size = new THREE.Vector3();
           const center = new THREE.Vector3();
-          box.getSize(size);
+          const size = new THREE.Vector3();
           box.getCenter(center);
+          box.getSize(size);
+
           car.position.sub(center);
           car.position.y += size.y / 2;
 
-          car.traverse((child: THREE.Object3D) => {
+          car.traverse((child) => {
             if (child instanceof THREE.Mesh) {
-              child.castShadow = true;
-              child.receiveShadow = true;
-              child.material.envMapIntensity = 1.5;
+              const mname = child.material.name.toLowerCase();
 
-              const name = child.material.name.toLowerCase();
-              const materialName = child.material.name.toLowerCase();
-
-              console.log('material name:', materialName);
-
-              console.log('name', name)
-
-              // Body paint
-              if (
-                name.includes("body") ||
-                name.includes("carpaint") ||
-                materialName.includes("material3")) {
+              if (mname.includes("body") || mname.includes("paint")) {
                 child.material = bodyMaterial;
-              }
-
-              // Details: rims, trims, metal parts
-              else if (
-                name.includes("rim") ||
-                name.includes("wheel") ||
-                name.includes("detail") ||
-                name.includes("metal") ||
-                name.includes("trim") ||
-                name.includes("brake") ||
-                name.includes("tire") ||
-                name.includes("exhaust") ||
-                name.includes("antenna")
-
+              } else if (
+                mname.includes("rim") ||
+                mname.includes("wheel") ||
+                mname.includes("metal")
               ) {
                 child.material = detailsMaterial;
-              }
-
-              // Windows / glass
-              else if (
-                name.includes("glass") ||
-                name.includes("window") ||
-                name.includes("windshield")
-              ) {
+              } else if (mname.includes("glass")) {
                 child.material = glassMaterial;
               }
             }
           });
 
           scene.add(car);
+          setLoading(false); // hide loading spinner
         },
-
-        // onProgress (optional)
         undefined,
-
-        // onError — MUST BE a function!
-        (err) => {
-          console.error("❌ GLTF load failed:", err);
-        }
+        (err) => console.error("GLTF load error:", err)
       );
 
-
-      window.addEventListener("resize", onWindowResize);
+      window.addEventListener("resize", onResize);
+      renderer.setAnimationLoop(animate);
     }
 
-    function onWindowResize() {
+    function onResize() {
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(window.innerWidth, window.innerHeight);
@@ -193,72 +210,57 @@ export default function McLarenViewer() {
 
     function animate() {
       controls.update();
-
-      const time = -performance.now() / 1000;
-
-      wheels.forEach((wh) => {
-        wh.rotation.x = time * Math.PI * 2;
-      });
-
-      // grid.position.z = -(time % 1);
-
       renderer.render(scene, camera);
       stats.update();
     }
 
     init();
-    return () => window.removeEventListener("resize", onWindowResize);
   }, []);
 
   return (
-    <div className="w-full h-screen bg-gray-900 relative">
-      {/* Controls Panel */}
+    <div className="w-full h-screen bg-black relative">
+      {/* Loading UI */}
+      {loading && (
+        <div className="absolute inset-0 flex items-center justify-center z-20 bg-black/80 backdrop-blur">
+          <div className="text-gray-200 text-lg animate-pulse">
+            Loading Car…
+          </div>
+        </div>
+      )}
+
+      {/* Controls */}
       <div className="absolute top-6 left-1/2 -translate-x-1/2 z-10 
-                      flex flex-wrap items-center justify-center gap-4 p-4
-                      bg-gray-800/80 backdrop-blur-sm rounded-lg shadow-lg
-                      border border-gray-700">
-
-        <label className="flex items-center gap-2 text-gray-100 text-sm font-medium">
-          <span className="text-gray-300">Body:</span>
-          <input
-            type="color"
-            ref={bodyColorRef}
-            defaultValue="#ff6600"
-            className="w-10 h-10 rounded border border-gray-600 cursor-pointer bg-transparent"
-          />
+                      flex gap-4 p-4 bg-gray-800/80 rounded-lg border border-gray-700">
+        <label className="text-gray-100 flex gap-1 items-center">
+          Body:
+          <input type="color" ref={bodyColorRef} defaultValue="#ff6600"
+                 className="w-10 h-10" />
         </label>
 
-        <label className="flex items-center gap-2 text-gray-100 text-sm font-medium">
-          <span className="text-gray-300">Details:</span>
-          <input
-            type="color"
-            defaultValue="#ffffff"
-            ref={detailsColorRef}
-            className="w-10 h-10 rounded border border-gray-600 cursor-pointer bg-transparent"
-          />
+        <label className="text-gray-100 flex gap-1 items-center">
+          Details:
+          <input type="color" ref={detailsColorRef} defaultValue="#ffffff"
+                 className="w-10 h-10" />
         </label>
 
-        <label className="flex items-center gap-2 text-gray-100 text-sm font-medium">
-          <span className="text-gray-300">Glass:</span>
-          <input
-            type="color"
-            defaultValue="#ffffff"
-            ref={glassColorRef}
-            className="w-10 h-10 rounded border border-gray-600 cursor-pointer bg-transparent"
-          />
+        <label className="text-gray-100 flex gap-1 items-center">
+          Glass:
+          <input type="color" ref={glassColorRef} defaultValue="#ffffff"
+                 className="w-10 h-10" />
+        </label>
+
+        <label className="text-gray-100 flex gap-1 items-center">
+          Light:
+          <select ref={lightingRef} className="bg-gray-700 text-gray-200 px-3 py-1 rounded">
+            <option value="morning">Morning</option>
+            <option value="noon">Noon</option>
+            <option value="evening">Evening</option>
+            <option value="night">Night</option>
+          </select>
         </label>
       </div>
 
-      {/* Instructions */}
-      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-10
-                      px-4 py-2 bg-gray-800/80 backdrop-blur-sm rounded-lg
-                      border border-gray-700 text-gray-300 text-sm">
-        <p>🖱️ Left click + drag to rotate • Right click + drag to pan • Scroll to zoom</p>
-      </div>
-
-      {/* 3D Viewer Container */}
       <div ref={containerRef} className="w-full h-full" />
     </div>
-
   );
 }
