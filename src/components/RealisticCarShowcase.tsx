@@ -105,28 +105,28 @@ export default function McLarenViewer() {
         0.1,
         100
       );
-      camera.position.set(4.2, 1.4, -4.3);
+      camera.position.set(-3, 1.5, 2);
 
       controls = new OrbitControls(camera, renderer.domElement);
       controls.maxDistance = 9;
       controls.maxPolarAngle = THREE.MathUtils.degToRad(90);
-      controls.target.set(0, 0.5, 0);
+      controls.target.set(0, 0.8, 0);
       controls.update();
 
       stats = new Stats();
       stats.dom.style.top = "0px";
 
       scene = new THREE.Scene();
-      scene.background = new THREE.Color(0x242424);
+      scene.background = new THREE.Color(0xffffff);
 
       /** ENVIRONMENT */
       new HDRLoader().load("/hdr/background.hdr", (hdr) => {
         hdr.mapping = THREE.EquirectangularReflectionMapping;
-        scene.environment = hdr;
+        scene.environment = null;
       });
 
       /** GRID (KEEPING IT) */
-      grid = new THREE.GridHelper(20, 40, 0xffffff, 0xffffff);
+      grid = new THREE.GridHelper(20, 40, 0x0a0a2e, 0x0a0a2e);
       grid.material.opacity = 0.2;
       grid.material.transparent = true;
       grid.material.depthWrite = false;
@@ -162,7 +162,7 @@ export default function McLarenViewer() {
         "/lexus/scene.gltf",
         (gltf) => {
           const car = gltf.scene;
-          car.scale.set(0.01, 0.01, 0.01);
+          car.scale.set(0.014, 0.014, 0.014);
 
           const box = new THREE.Box3().setFromObject(car);
           const center = new THREE.Vector3();
